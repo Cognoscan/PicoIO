@@ -1,0 +1,283 @@
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; CONSTANTS
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; Input Ports
+; -----------
+constant in_uart_status , 00 ; Status of uart modules
+constant in_uart_rx     , 01 ; Data received over uart
+
+; Output Ports
+; ------------
+constant out_uart_tx , 00
+constant out_leds    , 01
+
+; Constant Output Ports
+; ---------------------
+constant kout_reset_uart, 00
+
+; Individual Bits
+; ---------------
+; in_uart_status
+constant uart_status_tx_data_present , 01
+constant uart_status_tx_half_full    , 02
+constant uart_status_tx_full         , 04
+constant uart_status_rx_data_present , 08
+constant uart_status_rx_half_full    , 10
+constant uart_status_rx_full         , 20
+; kout_reset_uart
+constant reset_uart_tx   , 01 ; Reset TX
+constant reset_uart_rx   , 02 ; Reset RX
+constant reset_uart_both , 03 ; Reset Both
+
+; Scratch Pad Memory
+; ------------------
+; RESERVED - Addresses 00-0F for system functions
+constant mem_uart0    , 00
+constant mem_uart1    , 01
+constant mem_uart2    , 02
+constant mem_uart3    , 03
+constant mem_uart_cnt , 04
+
+; Misc Constants
+; --------------
+constant const_max_uart , 04 ; Max # of bytes to store in memory for UART
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; MAIN CODE
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; INITIALIZE
+Start:
+  ; Base initialization
+  call Delay1Second
+  call UartReset
+  load s0, 00
+  store s0, mem_uart_cnt
+  ; User initialization
+  call DisplayPrompt
+; MAIN LOOP
+Loop:
+  ; User Tasks
+
+  ; Process UART - Assume no unnamed registers are safe past this
+  call UartReceive
+  call nz, ProcessUart ; System Task for receiving ascii hex values
+  jump Loop
+
+; User Hook for processing hex data
+; mem_uart_cnt contains # valid bytes
+; mem_uartX containts byte X
+ProcessHex:
+  fetch s0, mem_uart_cnt
+  compare s0, 02
+  jump z, ProcessHex_WriteData
+  compare s0, 01
+  jump z, ProcessHex_ReadData
+ProcessHex_Done:
+  call DisplayNewline
+  jump DisplayPrompt ; Built in return
+ProcessHex_ReadData:
+  fetch s0, mem_uart0
+  and s0, 03
+  compare s0, in_uart_rx
+  jump z, ProcessHex_Done ; Guard against reading from UART RX
+  input s3, (s0)
+  call DisplayHex
+  load s0, s3
+  call DisplayHex
+  jump ProcessHex_Done
+ProcessHex_WriteData:
+  fetch s0, mem_uart0
+  fetch s3, mem_uart1
+  and s0, 03
+  compare s0, out_uart_tx
+  jump z, ProcessHex_Done ; Guard against writing to UART TX
+  output s3, (s0)
+  call DisplayHex
+  load s0, s3
+  call DisplayHex
+  jump ProcessHex_Done
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; SYSTEM TASKS
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; ProcessUart - Process bytes received over UART
+ProcessUart:
+  compare s0, 08 ; "Backspace"
+  jump z, ProcessUart_Backspace
+  compare s0, 0D ; "Carriage Return"
+  jump z, ProcessUart_EnterPressed
+  ; See if valid character
+  ; Discard if less than "0"
+  compare s0, "0"
+  return c
+  ; Keep if less than ":" ("0"-"9")
+  compare s0, ":"
+  jump c, ProcessUart_StoreChar
+  ; Discard if less than "A"
+  compare s0, "A"
+  return c
+  ; Keep if less than "G" ("A"-"F")
+  compare s0, "G"
+  jump c, ProcessUart_StoreChar
+  ; Discard if less than "a"
+  compare s0, "a"
+  return c
+  ; Keep if less than "g" ("a"-"f")
+  compare s0, "g"
+  return nc
+; Store Character from UART
+ProcessUart_StoreChar:
+  ; Check to see if at max # characters
+  fetch s2, mem_uart_cnt
+  compare s2, const_max_uart
+  return z
+  ; If less than max, echo character & store
+  call UartSend
+  add s2, mem_uart0
+  store s0, (s2)
+  add s2, 01
+  sub s2, mem_uart0
+  store s2, mem_uart_cnt
+  return
+; Undo last character entered
+ProcessUart_Backspace:
+  call UartSend
+  fetch s0, mem_uart_cnt
+  compare s0, 00
+  return z
+  sub s0, 01
+  store s0, mem_uart_cnt
+  return
+; Process all characters on an "Enter"
+ProcessUart_EnterPressed:
+  call DisplayNewline
+  ; Convert bytes into Hex characters
+  fetch s0, mem_uart_cnt ; Number to process
+  load s1, mem_uart0 ; Index of working character
+  load s2, mem_uart0 ; Index of result
+ProcessUart_EnterPressed_Loop:
+  fetch s3, (s1)
+  compare s3, 40 
+  jump c, ProcessUart_EnterPressed_LoopNum
+  and s3, 4F ; Capitalize
+  sub s3, 07 ; Line up so that char space is 0-9,A-F
+ProcessUart_EnterPressed_LoopNum:
+  sub s3, 30
+  test s1, 01 ; IF mem_uart0 is odd, make below jump z. If even, make nz.
+  jump nz, ProcessUart_EnterPressed_LoopLower
+  store s3, (s2)
+  jump ProcessUart_EnterPressed_LoopDone
+ProcessUart_EnterPressed_LoopLower:
+  fetch s4, (s2)
+  sl0 s4
+  sl0 s4
+  sl0 s4
+  sl0 s4
+  add s4, s3
+  store s4, (s2)
+  add s2, 01
+ProcessUart_EnterPressed_LoopDone:
+  add s1, 01
+  sub s0, 01 
+  jump nz, ProcessUart_EnterPressed_Loop
+  sub s2, mem_uart0
+  store s2, mem_uart_cnt
+  ; Call User routine to handle data
+  call ProcessHex
+  load s0, 00
+  store s0, mem_uart_cnt
+  return
+; Just echo Newlines
+ProcessUart_Newline:
+  call UartSend
+  return
+
+DisplayPrompt:
+  load s0, ">"
+  call UartSend
+  load s0, " "
+  jump UartSend
+
+DisplayNewline:
+  load s0, 0D
+  call UartSend
+  load s0, 0A
+  jump UartSend
+
+; DisplayHex - Display s0 as hex sequence
+; s0 - Byte to display
+; s1 - Modified by UartSend
+; s2 - Working memory
+DisplayHex:
+  load s2, s0
+  ; Upper nibble
+  sr0 s0
+  sr0 s0
+  sr0 s0
+  sr0 s0
+  call DisplayHex_Nibble
+  ; Lower nibble
+  load s0, s2
+  and s0, 0F
+DisplayHex_Nibble:
+  compare s0, 0A ; test if 0-9
+  jump c, DisplayHex_Nibble_ToChar
+  add s0, 07 ; 0A to 0F is range 41'h-46'h
+DisplayHex_Nibble_ToChar:
+  add s0, 30 ; 00 to 09 is range 30'h-39'h
+  call UartSend
+  return
+
+; UartReset - Reset UART modules
+UartReset:
+  outputk reset_uart_both, kout_reset_uart
+  outputk 00, kout_reset_uart
+  return 
+
+; UartSend - Send Byte over UART
+; Sends Byte into UART TX buffer
+;
+; s0 - Byte to send (not modified)
+; Uses s1 for scratch data
+UartSend:
+  input s1, in_uart_status
+  test s1, uart_status_tx_full
+  jump nz, UartSend ; Don't send if buffer is full
+  output s0, out_uart_tx
+  return
+
+; UartReceive - Attempt to Get Byte from UART
+;
+; s0 - Byte received
+; Z=0 when data present
+; Z=1 if no data received
+UartReceive:
+  input s0, in_uart_status
+  test s0,  uart_status_rx_data_present
+  return z ; No data in buffer
+  input s0, in_uart_rx
+  return
+
+; Delay1Second - Wait for 1 full second
+Delay1Second:
+  load s2, 5f
+  load s1, 5e
+  load s0, 10
+  jump CommonDelay
+
+; CommonDelay - Delay some amount of time
+; Delay for s2:s1:s0 (concatenated) cycles
+; At 50 MHz, each cycle is 8/50MHz = 160 ns
+;
+; s2,s1,s0 - Delay period
+CommonDelay:
+  sub s0, 1'd
+  subcy s1, 0'd
+  subcy s2, 0'd
+  jump nz, CommonDelay
+  return 
+

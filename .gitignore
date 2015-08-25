@@ -1,0 +1,10 @@
+# Picoblaze compiler outputs
+assembler/*log.txt
+assembler/*.fmt
+assembler/*.hex
+assembler/*.log
+program.v
+
+# Modelsim
+modelsim.ini
+work/

@@ -1,0 +1,7 @@
+# Picoblaze I/O
+
+This project implements a Picoblaze & UART transceiver, and provides code for 
+using the UART to do simple read/write of inputs and outputs on the Picoblaze.
+
+It is targeted towards the [Mojo Development Board]
+(https://embeddedmicro.com/products/mojo-v3.html).
