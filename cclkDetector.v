@@ -28,7 +28,7 @@ always @(posedge clk) begin
         counter <= 'd0;
     end
     else if (!done) begin // CCLK high
-        counter <= counter + 1;
+        counter <= counter + 2'd1;
     end
 end
 

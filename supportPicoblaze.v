@@ -101,29 +101,32 @@ program programRom (
     .clk(clk)
 );
 
-uart_tx6 tx (
-    .data_in(uartTxData),
-    .en_16_x_baud(en16XBaud),
-    .serial_out(avrRx),
-    .buffer_write(writeToUartTx),
-    .buffer_data_present(uartTxDataPresent),
-    .buffer_half_full(uartTxHalfFull),
-    .buffer_full(uartTxFull),
-    .buffer_reset(uartTxReset),              
-    .clk(clk)
+uartTx tx (
+    // Inputs
+    .clk(clk),                       ///< System clock
+    .dataIn(uartTxData),             ///< [7:0] Data to transmit
+    .write(writeToUartTx),           ///< Write strobe
+    .rst(uartTxReset),               ///< Reset FIFO
+    .x16BaudStrobe(en16XBaud),       ///< Strobe at 16x baud rate
+    // Outputs
+    .serialOut(avrRx),               ///< Serial transmit
+    .dataPresent(uartTxDataPresent), ///< Data present in transmit buffer
+    .halfFull(uartTxHalfFull),       ///< Transmit buffer is half full
+    .full(uartTxFull)                ///< Transmit buffer is full
 );
 
-uart_rx6 rx (
-    .serial_in(avrTx),
-    .en_16_x_baud(en16XBaud),
-    .data_out(uartRxData),
-    .buffer_read(readFromUartRx),
-    .buffer_data_present(uartRxDataPresent),
-    .buffer_half_full(uartRxHalfFull),
-    .buffer_full(uartRXFull),
-    .buffer_reset(uartRxReset),              
-    .clk(clk)
+uartRx rx (
+    .clk(clk),                       ///< System clock
+    .rst(uartRxReset),               ///< Reset FIFO
+    .x16BaudStrobe(en16XBaud),       ///< Strobe at 16x baud rate
+    .read(readFromUartRx),           ///< Read strobe for buffer
+    .serialIn(avrTx),                ///< Serial Receive
+    .dataOut(uartRxData),            ///< [7:0] Data from receive buffer
+    .dataPresent(uartRxDataPresent), ///< Receive buffer not empty
+    .halfFull(uartRxHalfFull),       ///< Receive buffer half full
+    .full(uartRXFull)                ///< Receive buffer full
 );
+
 
 // Set serial rate at 500000 with pulse at 8MHz. 50Mhz / 8 MHz = 6.25, so pulse at rate
 // 6...6...6...7 clocks.

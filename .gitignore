@@ -7,4 +7,6 @@ program.v
 
 # Modelsim
 modelsim.ini
+transcript
+*.wlf
 work/
